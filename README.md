@@ -14,3 +14,12 @@ V 0.2.0 (amc272) 27-4-2026
 - Implemented MovingAverage(), can smooth input signal
 - Implemented BandPasss(), filters signal
 - Implemented FFT()/IFFT() methods, completes a fourier transform on input signal for analysis
+
+V 0.2.1 (amc272) 28-4-2026
+- Changed the RemoveDCDrift() method as it was not working right
+
+V 1.0.0 (oet24) 28-4-2026
+- Implemented the SignalAnalyser(), calls the other main classes to analyse signal
+- Implemented SignalResults(), uses Matplotlib to draw graphs of the signal and its spectrum
+
+  
