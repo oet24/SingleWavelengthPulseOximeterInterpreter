@@ -44,16 +44,43 @@ class SignalProcessor:
         self.lowerCutoff = lowerCutoff
 
     def MovingAverage(self, signal, length):
-        pass  
+        paddedSignal = signal.copy()
 
-    def BandPass(self, signal,readings,fs):
-        pass
+        for i in range(self.movAvgFactor):
+            paddedSignal.append(signal[length - 1])
+
+        smoothedSignal = []
+
+        for reading in range(length):
+            total = 0
+
+            for i in range(self.movAvgFactor):
+                total += paddedSignal[reading + i]
+
+            smoothedSignal.append(total / self.movAvgFactor)
+
+        return smoothedSignal
+
+    def BandPass(self, signal, readings, fs):
+        fft_result, freqs = self.FFT(signal, fs, readings)
+
+        fft_result[freqs < self.lowerCutoff] = 0
+        fft_result[freqs > self.upperCutoff] = 0
+
+        filteredSignal = self.IFFT(signal, fft_result, readings)
+
+        return filteredSignal
 
     def FFT(self, signal, fs, readings):
-        pass
-    
+        fft_result = fft.rfft(signal)
+        freqs = fft.rfftfreq(readings, 1 / fs)
+
+        return fft_result, freqs
+   
     def IFFT(self, signal, fft_result, readings):
-        pass
+        reconstructedSignal = fft.irfft(fft_result, n=readings)
+
+        return reconstructedSignal
 
 
 class SignalAnalysis:
