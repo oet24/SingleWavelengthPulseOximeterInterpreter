@@ -11,7 +11,7 @@ print("Do not base health decisions on the output of this program, seek help fro
 
 # Configurable options
 
-SIGNAL_FILENAME = "sig.txt"
+SIGNAL_FILENAME = "signal.txt"
 BANDPASS_UPPER = 4
 BANDPASS_LOWER = 0.5
 MOVING_AVERAGE_FACTOR = 10
@@ -19,19 +19,17 @@ MOVING_AVERAGE_FACTOR = 10
 # Class Definitions
 
 class Signal:
-    def __init__(self, signalFileName):
+    def __init__(self, signalFileName=None, signalData=None):
         """
-        Retrieves oximeter data from text file and stores it. Holds the signal in
-        various stages of the filtering process. Stores useful information about
-        the signal.
+        Retrieves oximeter data from text file or stores provided signal data.
+        Holds one version of a signal and stores useful information about it.
 
         Args:
             signalFileName (string) location of the signal textfile
+            signalData (List[float, float]) Holds a signal in [time, signal] format
 
         Attributes:
-            originalSignal (List[float, float]) Holds the original signal in [time, signal] format
-            smoothedSignal (List[float, float]) Holds the signal after moving average smoothing, [time, signal] format
-            filteredSignal (List[float, float]) Holds the fully filtered signal in [time, signal] format
+            signal (List[float, float]) Holds the signal in [time, signal] format
             readings (int) Contains the amount of signal readings collected from the textfile
             duration (float) Contains the duration of the collected signal
             dt (float) Contains the time divisions between each signal reading
@@ -40,21 +38,19 @@ class Signal:
             spectrum (List[complex]) Holds the frequency domain version of the signal
             signalFileName (string) as above
             """
-        self.originalSignal = []
-        self.smoothedSignal = []
-        self.filteredSignal = []
+        self.signal = []
         self.signalFileName = signalFileName
-        self.AddSignal()
+        if signalFileName != None:
+            self.AddSignal()
+        elif signalData != None:
+            self.signal = signalData
         self.ValidateData()
-        self.readings = len(self.originalSignal)
-        self.duration = self.originalSignal[self.readings-1][0]
+        self.readings = len(self.signal)
+        self.duration = self.signal[self.readings-1][0]
         self.dt = self.duration/(self.readings-1)
         self.sampleFreq = 1/self.dt
         self.fundamentalFreq = self.sampleFreq/self.readings
-        self.RemoveDCDrift()
         self.spectrum = []
-
-
 
     def ValidateData(self):
         """
@@ -62,13 +58,12 @@ class Signal:
         any invalid readings. Quits the program if there is an issue to prevent an
         error.
         """
-        for reading in self.originalSignal:
+        for reading in self.signal:
             if reading[0] == "" or reading[1] == "":
-                self.originalSignal.remove(reading)
-        if len(self.originalSignal) < 2:
+                self.signal.remove(reading)
+        if len(self.signal) < 2:
             print("Not enough data for processing")
             quit()
-
 
     def RemoveDCDrift(self):
         """
@@ -76,13 +71,13 @@ class Signal:
         component from the signal that may interfere with calculations later on.
         """
         sum = 0
-        for i in self.GetSignal(1):
+        for i in self.GetSignal():
             sum += i
         mean = sum/self.readings
         newSignal = []
-        for i in self.GetSignal(1):
+        for i in self.GetSignal():
             newSignal.append(i - mean)
-        self.SetSignal(newSignal, 1)
+        self.SetSignal(newSignal)
 
     def AddSignal(self):
         """
@@ -103,29 +98,20 @@ class Signal:
                     try:
                         time = float(parts[0])
                         value = float(parts[1])
-                        self.originalSignal.append([time, value])
+                        self.signal.append([time, value])
                     except:
                         pass
         f.close()
 
-    def GetSignal(self, stage):
+    def GetSignal(self):
         """
-        Getter for the 3 variations of the signal.
-
-        Args:
-            stage (int) Corresponds to a stage in the filtering process
+        Getter for the signal values.
 
         Returns:
-            signalValues (List[float]) The signal component ONLY of the selected signal
+            signalValues (List[float]) The signal component ONLY of the signal
         """
         signalValues = []
-        if stage == 1: # Raw signal
-            signal = self.originalSignal
-        elif stage == 2: # Signal after moving average
-            signal = self.smoothedSignal
-        else: # Signal after band-pass filter
-            signal = self.filteredSignal
-        for reading in signal:
+        for reading in self.signal:
             signalValues.append(reading[1])
         return signalValues
 
@@ -137,7 +123,7 @@ class Signal:
             timeValues (List[float]) The time component ONLY of the signal
         """
         timeValues = []
-        for reading in self.originalSignal:
+        for reading in self.signal:
             timeValues.append(reading[0])
         return timeValues
 
@@ -151,24 +137,17 @@ class Signal:
         """
         return [self.duration, self.sampleFreq, self.fundamentalFreq, self.dt, self.readings]
 
-    def SetSignal(self, newSignal, stage):
+    def SetSignal(self, newSignal):
         """
-        Setter for all 3 stages of the signal.
+        Setter for the signal values.
 
         Args:
             newSignal (List[float]) Contains the new version of the signal being overwritten
-            stage (int) Corresponds to a stage in the filtering process
         """
-        # Stage 1, 2 or 3
         signalValues = []
         for reading in range(self.readings):
             signalValues.append([self.GetTimes()[reading], newSignal[reading]])
-        if stage == 1: # Raw signal
-            self.originalSignal = signalValues
-        elif stage == 2: # Signal after moving average
-            self.smoothedSignal = signalValues
-        else: # Signal after band-pass
-            self.filteredSignal = signalValues
+        self.signal = signalValues
 
 class SignalProcessor:
     def __init__(self, movAvgFactor, upperCutoff, lowerCutoff):
@@ -191,63 +170,66 @@ class SignalProcessor:
         self.upperCutoff = upperCutoff
         self.lowerCutoff = lowerCutoff
 
-    def MovingAverage(self, signal, length):
+    def MovingAverage(self, signal):
         """
         Performs smoothing on a signal by moving average. Pads the end of the signal
         to prevent errors when using the moving window, removes the extra values at
         the end.
 
         Args:
-            signal (List[float]) the signal to be smoothed
-            length (int) the length of the signal (used for padding)
+            signal (Signal) the signal to be smoothed
 
         Returns:
-            signal (List[float]) Holds the now smoothed version of the signal
+            Signal Holds the now smoothed version of the signal
         """
+        signalValues = signal.GetSignal()
+        length = signal.readings
         for i in range(self.movAvgFactor):
-            signal.append(signal[length-1])
+            signalValues.append(signalValues[length-1])
         for reading in range(length):
             sum = 0
             for i in range(self.movAvgFactor):
-                sum += signal[reading+i]
-            signal[reading] = sum/self.movAvgFactor
-        return signal
+                sum += signalValues[reading+i]
+            signalValues[reading] = sum/self.movAvgFactor
+        newSignal = []
+        for reading in range(length):
+            newSignal.append([signal.GetTimes()[reading], signalValues[reading]])
+        return Signal(signalData=newSignal)
 
-    def BandPass(self, signal,readings,fs):
+    def BandPass(self, signal):
         """
         Bandpass filter, takes a signal and removes frequency component outside the
         cutoff range defined in instantiation. Does this by converting to the frequency
         domain via FFT and then reconstructing the clean signal using IFFT.
 
         Args:
-            signal (List[float]) Holds the signal being filtered
-            readings (int) Amount of values in the signal
-            fs (float) sampling frequency of the signal
+            signal (Signal) Holds the signal being filtered
 
         Returns:
-            filteredSignal (List[float]) The signal after filtering
+            Signal The signal after filtering
         """
-        fftResult, freqs = self.FFT(signal, fs, readings)
+        fftResult, freqs = self.FFT(signal)
         fftResult[freqs < self.lowerCutoff] = 0
         fftResult[freqs > self.upperCutoff] = 0
-        filteredSignal = self.IFFT(fftResult, readings)
-        return filteredSignal
+        filteredSignal = self.IFFT(fftResult, signal.readings)
+        newSignal = []
+        for reading in range(signal.readings):
+            newSignal.append([signal.GetTimes()[reading], filteredSignal[reading]])
+        return Signal(signalData=newSignal)
 
-    def FFT(self, signal, fs, readings):
+    def FFT(self, signal):
         """
         Performs a fast-fourier-transform on a given signal.
 
         Args:
-            signal (List[float]) Holds the signal being processed
-            readings (int) Amount of values in the signal
-            fs (float) sampling frequency of the signal
+            signal (Signal) Holds the signal being processed
 
         Returns:
             fftResult (List[Complex]) Contains the complex values for use in a frequency spectrum
             freqs (List[float]) holds the frequency values used to plot a spectrum
         """
-        fftResult = fft.rfft(signal)
-        freqs = fft.rfftfreq(readings, 1/fs)
+        fftResult = fft.rfft(signal.GetSignal())
+        freqs = fft.rfftfreq(signal.readings, 1/signal.sampleFreq)
         return fftResult, freqs
 
     def IFFT(self, fftResult, readings):
@@ -260,101 +242,6 @@ class SignalProcessor:
         """
         reconstructedSignal = fft.irfft(fftResult, n=readings)
         return reconstructedSignal
-
-
-class SignalAnalysis:
-    def __init__(self, filter, signal):
-        """
-        Main class of the program. Executes operations using the SignalProcessor() on the
-        Signal(). Outputs the result using the SignalResults() class. Also calculates BPM
-        on the signal.
-
-        Args:
-            filter [SignalProcessor] Instance of SignalProcessor() used to call filters/smoothing
-            signal [Signal] The signal collected from the oximeter to be analysed
-            output [SignalOutput] Instance of SignalOutput() for outputting the results
-
-        """
-        self.filter = filter
-        self.signal = signal
-        self.output = SignalResult()
-
-    def CleanSignal(self):
-        """
-        Retrieves the signal values, uses the moving average method on them, stores
-        the amended values.
-        """
-        self.signal.SetSignal(self.filter.MovingAverage(self.signal.GetSignal(1), self.signal.readings), 2)
-
-    def FilterSignal(self):
-        """
-        Retrieves signal values, runs them through a bandpass filter, stores the
-        filtered version of the signal.
-        """
-        self.signal.SetSignal(self.filter.BandPass(self.signal.GetSignal(2), self.signal.readings, self.signal.sampleFreq), 3)
-
-    def CalculateSpectrum(self):
-        """
-        Uses FFT to convert the signal to the frequency domain. Stores it so that
-        it can be analysed and plotted later.
-        """
-        self.signal.spectrum = self.filter.FFT(self.signal.GetSignal(3), self.signal.sampleFreq, self.signal.readings)
-
-    def AnalyseSignal(self):
-        """
-        Performs operations on the signal prior to either analysis or plotting
-        """
-        self.CleanSignal()
-        self.FilterSignal()
-        self.CalculateSpectrum()
-
-    def Plot(self):
-        """
-        Calls upon methods in the SignalResults() class to plot the 3 graphs of the signal
-        at various stages in the filtering process. Frequency spectrum only displays
-        the range of the bandpass filter.
-        """
-        self.AnalyseSignal()
-        graphs = plt.subplots(3, 1)[1]
-        self.output.PlotGraph(graphs[0], self.signal.GetTimes(), self.signal.GetSignal(1), 'Time (s)', 'Signal (V)', 'Original Signal')
-        self.output.PlotGraph(graphs[1], self.signal.GetTimes(), self.signal.GetSignal(3), 'Time (s)', 'Signal (V)', 'Filtered Signal')
-        self.output.PlotGraph(graphs[2], self.signal.spectrum[1], np.abs(self.signal.spectrum[0]), 'Frequency (Hz)', 'Magnitude', 'Signal Spectrum')
-        graphs[2].set_xlim(BANDPASS_LOWER,BANDPASS_UPPER)
-        plt.tight_layout()
-        plt.show()
-
-    def GetBPM(self):
-        """
-        Evaluates the FFT of tje signal and finds the highest peak. This corresponds to
-        the dominant frequency of the signal, which in the range given by the bandpass,
-        will be the patients heart-rate. Multiplied by 60 to get BPM.
-
-        Returns:
-            BPM (float) The heart rate of the patient
-        """
-        self.AnalyseSignal()
-        fftResult, freqs = self.filter.FFT(self.signal.GetSignal(3), self.signal.sampleFreq, self.signal.readings)
-        fftResult = np.abs(fftResult)
-        peak = max(fftResult)
-        BPM = 0
-        i = 0
-        for result in fftResult:
-            if result == peak:
-                BPM = i
-            else:
-                i += 1
-
-        print("Dominant frequency: "+str(round(freqs[BPM],3))+" Hz")
-        BPM = freqs[BPM] * 60
-        return BPM
-
-    def Results(self):
-        """
-        Calls the method to format and output the useful signal information
-        """
-        self.output.OutputSignalInfo(self.GetBPM(), signal.GetSignalInfo())
-
-
 
 class SignalResult:
     def __init__(self):
@@ -381,35 +268,14 @@ class SignalResult:
         graph.set_ylabel(yLabel)
         graph.set_title(title)
 
-    def InterpretBPM(self, BPM):
-        """
-        Interprets the BPM value calculated to make conclusions about the health
-        of the patient. Determines if heart rate is too high, too low, ideal or at
-        health emergency levels.
-
-        Args:
-            BPM (float) The heart rate of the patient
-        """
-        if BPM >= 60 and BPM <= 100:
-            return "The patient is healthy"
-        if BPM > 100 and BPM <= 180:
-            return "The patient has a high heart rate"
-        if BPM >= 40 and BPM < 60:
-            return "The patient has a low heart rate"
-        if BPM < 40 or BPM > 180:
-            return "The patient needs urgent help!"
-
-
-    def OutputSignalInfo(self, BPM, signalInfo):
+    def OutputSignalInfo(self, signal):
         """
         Formats the useful signal values to output to the console.
 
         Args:
-            BPM (float) The heart rate of the patient
-            signal (Signal) The instance of signal, to retrieve useful signal data.
+            signalInfo (List[float]) Useful information about the input signal
         """
-        print("The patient has a heart rate of:", str(round(BPM)), "beats per minute (BPM)")
-        print(self.InterpretBPM(BPM))
+        signalInfo = signal.GetSignalInfo()
         print("The input signal had the following characteristics:")
         print("Duration:", str(signalInfo[0]), " s")
         print("Sampling Frequency:", str(round(signalInfo[1], 4)), " hz")
@@ -417,14 +283,120 @@ class SignalResult:
         print("Time divisons", str(round(signalInfo[3], 6)), " s")
         print("Readings:", str(signalInfo[4]))
 
+class OximeterAnalyser:
+    def __init__(self, filter, signal):
+        """
+        Main class of the program. Executes operations using the SignalProcessor() on the
+        input Signal(). Outputs the result using the SignalResults() class. Analyses the
+        oximeter signal to make conclusions about the patient.
+
+        Args:
+            filter [SignalProcessor] Instance of SignalProcessor() used to call filters/smoothing
+            signal [Signal] The signal collected from the oximeter to be analysed
+            BPM [Float] The heart rate retrieved from the oximeter
+        """
+        self.filter = filter
+        self.rawSignal = signal
+        self.smoothedSignal = None
+        self.filteredSignal = None
+        self.output = SignalResult()
+        self.BPM = 0
+
+    def CleanSignal(self):
+        """
+        Retrieves the signal values, uses the moving average method on them, stores
+        the amended values.
+        """
+        self.smoothedSignal = self.filter.MovingAverage(self.rawSignal)
+
+    def FilterSignal(self):
+        """
+        Retrieves signal values, runs them through a bandpass filter, stores the
+        filtered version of the signal.
+        """
+        self.filteredSignal = self.filter.BandPass(self.smoothedSignal)
+
+    def CalculateSpectrum(self):
+        """
+        Uses FFT to convert the signal to the frequency domain. Stores it so that
+        it can be analysed and plotted later.
+        """
+        self.filteredSignal.spectrum = self.filter.FFT(self.filteredSignal)
+
+    def AnalyseSignal(self):
+        """
+        Performs operations on the signal prior to either analysis or plotting
+        """
+        self.rawSignal.RemoveDCDrift()
+        self.CleanSignal()
+        self.FilterSignal()
+        self.CalculateSpectrum()
+
+    def Plot(self):
+        """
+        Calls upon methods in the SignalResults() class to plot the 3 graphs of the signal
+        at various stages in the filtering process. Frequency spectrum only displays
+        the range of the bandpass filter.
+        """
+        self.AnalyseSignal()
+        graphs = plt.subplots(3, 1)[1]
+        self.output.PlotGraph(graphs[0], self.rawSignal.GetTimes(), self.rawSignal.GetSignal(), 'Time (s)', 'Signal (V)', 'Original Signal')
+        self.output.PlotGraph(graphs[1], self.filteredSignal.GetTimes(), self.filteredSignal.GetSignal(), 'Time (s)', 'Signal (V)', 'Filtered Signal')
+        self.output.PlotGraph(graphs[2], self.filteredSignal.spectrum[1], np.abs(self.filteredSignal.spectrum[0]) / self.filteredSignal.readings, 'Frequency (Hz)', 'Magnitude (V)', 'Signal Spectrum')
+        graphs[2].set_xlim(BANDPASS_LOWER,BANDPASS_UPPER)
+        plt.tight_layout()
+        plt.show()
+
+    def CalculateBPM(self):
+        """
+        Evaluates the FFT of the signal and finds the highest peak. This corresponds to
+        the dominant frequency of the signal, which in the range given by the bandpass,
+        will be the patients heart-rate. Multiplied by 60 to get BPM.
+        """
+        self.AnalyseSignal()
+        fftResult, freqs = self.filter.FFT(self.filteredSignal)
+        fftResult = np.abs(fftResult)
+        peak = max(fftResult)
+        i = 0
+        for result in fftResult:
+            if result == peak:
+                self.BPM = i
+            else:
+                i += 1
+
+        print("Dominant frequency: "+str(round(freqs[self.BPM],3))+" Hz")
+        self.BPM = freqs[self.BPM] * 60
+
+    def InterpretBPM(self, BPM):
+        """
+        Interprets the BPM value calculated to make conclusions about the health
+        of the patient. Determines if heart rate is too high, too low, ideal or at
+        health emergency levels.
+        """
+        print("The patient has a heart rate of:", str(round(BPM)), "beats per minute (BPM)")
+        if self.BPM >= 60 and self.BPM <= 100:
+            print("The patient is healthy")
+        if self.BPM > 100 and self.BPM <= 180:
+            print("The patient has a high heart rate")
+        if self.BPM >= 40 and self.BPM < 60:
+            print("The patient has a low heart rate")
+        if self.BPM < 40 or self.BPM > 180:
+            print("The patient needs urgent help!")
+
+    def Results(self):
+        """
+        Calls the methods to calculate and output the useful signal information
+        """
+        self.CalculateBPM()
+        self.InterpretBPM(self.BPM)
+        self.output.OutputSignalInfo(self.rawSignal)
+
 
 # Initialise Classes
 Filter = SignalProcessor(MOVING_AVERAGE_FACTOR, BANDPASS_UPPER, BANDPASS_LOWER)
 signal = Signal(SIGNAL_FILENAME)
-Analysis = SignalAnalysis(Filter, signal)
+Analysis = OximeterAnalyser(Filter, signal)
 
 # Analyse and output results
 Analysis.Plot()
 Analysis.Results()
-
-
