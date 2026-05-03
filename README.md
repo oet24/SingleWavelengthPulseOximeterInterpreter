@@ -22,4 +22,6 @@ V 1.0.0 (oet24) 28-4-2026
 - Implemented the SignalAnalyser(), calls the other main classes to analyse signal
 - Implemented SignalResults(), uses Matplotlib to draw graphs of the signal and its spectrum
 
-  
+V 1.1.0 (oet24) 28-4-2026
+- Added docstrings to all the methods
+- Removed unnecessary getters and setters 
