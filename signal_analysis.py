@@ -11,30 +11,53 @@ class Signal:
         self.sampleFreq = 1/self.dt
         self.fundamentalFreq = self.sampleFreq/self.readings
         
-        #self.ogSignal =
-        #self.spectrum =
-        #self.ogSpectrum = 
+        self.RemoveDCDrift()
+        self.spectrum = None
 
     def RemoveDCDrift(self):
-        pass
+        values = self.GetSignal()
+        mean = sum(values) / self.GetReadings()
+
+        for i in range(self.readings):
+            self.signal[i][1] = self.signal[i][1] - mean
 
     def AddSignal(self):
-        pass
+        with open("signal.txt", "r") as f:
+            content = f.readlines()
+
+        for line in content:
+            if line.strip():
+                parts = line.strip().split("\t")
+
+                if len(parts) == 2:
+                    time = float(parts[0])
+                    value = float(parts[1])
+                    self.signal.append([time, value])
 
     def GetSignal(self):
-        pass
+        signalValues = []
+
+        for reading in self.signal:
+            signalValues.append(reading[1])
+
+        return signalValues
 
     def GetTimes(self):
-        pass
+        timeValues = []
+
+        for reading in self.signal:
+            timeValues.append(reading[0])
+
+        return timeValues
     
     def GetReadings(self):
-        pass
+        return self.readings
     
     def GetSampleFreq(self):
-        pass
+        return self.sampleFreq
 
-    def SetSpectrum(self):
-        pass
+    def SetSpectrum(self, spectrum):
+        self.spectrum = spectrum
 
 
 class SignalProcessor:
